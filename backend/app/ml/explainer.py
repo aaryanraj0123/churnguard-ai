@@ -47,9 +47,7 @@ class ExplainerService:
         transformed_names: list[str] = []
         for _name, transformer, cols in preprocessor.transformers_:
             if hasattr(transformer, "get_feature_names_out"):
-                transformed_names.extend(
-                    transformer.get_feature_names_out(cols).tolist()
-                )
+                transformed_names.extend(transformer.get_feature_names_out(cols).tolist())
             else:
                 transformed_names.extend(list(cols))
 
@@ -180,9 +178,7 @@ class ExplainerService:
         probabilities = classifier.predict_proba(x_transformed)[:, 1]
 
         results: list[dict[str, Any]] = []
-        for i, (record_shap, prob) in enumerate(
-            zip(shap_matrix, probabilities, strict=False)
-        ):
+        for i, (record_shap, prob) in enumerate(zip(shap_matrix, probabilities, strict=False)):
             record_vector = self._record_vector(record_shap)
 
             feature_shap_pairs = sorted(
@@ -199,9 +195,7 @@ class ExplainerService:
                 {
                     "feature": fname,
                     "shap_value": round(float(sv), 6),
-                    "direction": (
-                        "increases_churn" if float(sv) > 0 else "decreases_churn"
-                    ),
+                    "direction": ("increases_churn" if float(sv) > 0 else "decreases_churn"),
                     "magnitude": round(abs(float(sv)), 6),
                 }
                 for fname, sv in feature_shap_pairs[:top_n]

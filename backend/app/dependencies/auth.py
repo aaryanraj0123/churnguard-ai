@@ -78,7 +78,7 @@ def require_role(*roles: UserRole) -> Callable:
     ) -> User:
         if current_user.role not in roles:
             raise ForbiddenException(
-                f"Required role(s): {[r.value for r in roles]}. " f"Your role: {current_user.role.value}"
+                f"Required role(s): {[r.value for r in roles]}. Your role: {current_user.role.value}"
             )
         return current_user
 

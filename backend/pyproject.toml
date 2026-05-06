@@ -29,7 +29,6 @@ ignore = [
   "S607",    # partial executable — git is system binary
   "B007",    # loop control variable unused — intentional
   "B904",    # raise from — existing pattern
-  "UP038",   # isinstance X|Y — py3.12 compat
 ]
 per-file-ignores = { "tests/*" = ["S", "N"], "app/ml/train.py" = ["T20"], "alembic/*" = ["N"], "app/generate_dataset.py" = ["S311", "T20", "E501"] }
 

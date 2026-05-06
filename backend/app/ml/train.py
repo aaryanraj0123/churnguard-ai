@@ -206,9 +206,9 @@ def train(
 ) -> dict:
     start_time = time.time()
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("ChurnGuard AI — Training Pipeline")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Data:      {data_path}")
     print(f"Estimator: {estimator_key}")
     print(f"Min AUC:   {min_auc}")
@@ -264,7 +264,7 @@ def train(
     }
 
     print(f"\n  {'Metric':<20} {'Value':>10}")
-    print(f"  {'-'*30}")
+    print(f"  {'-' * 30}")
     for k, v in metrics.items():
         if k != "row_count":
             print(f"  {k:<20} {v:>10.4f}")
@@ -355,10 +355,10 @@ def train(
         print(f"  [WARN] Experiment tracking failed (non-fatal): {e}")
 
     duration = time.time() - start_time
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"DONE in {duration:.1f}s")
     print(f"Version: {output_tag} | AUC: {metrics['auc_roc']:.4f} | Promoted: {promoted}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     return {
         "version_tag": output_tag,

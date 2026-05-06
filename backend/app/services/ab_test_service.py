@@ -48,7 +48,7 @@ class ABTestService:
         existing_active = await self._repo.get_active()
         if existing_active:
             raise ConflictException(
-                f"A/B test '{existing_active.name}' is already active. " "Stop it before starting a new one."
+                f"A/B test '{existing_active.name}' is already active. Stop it before starting a new one."
             )
 
         existing_named = await self._repo.get_by_name(payload.name)
