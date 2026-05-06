@@ -44,17 +44,17 @@ class ExplainerService:
         if preprocessor is None or classifier is None:
             raise ValueError("Pipeline must have 'preprocessor' and 'classifier' steps")
 
-        # Get transformed feature names
         transformed_names: list[str] = []
         for _name, transformer, cols in preprocessor.transformers_:
             if hasattr(transformer, "get_feature_names_out"):
-                transformed_names.extend(transformer.get_feature_names_out(cols).tolist())
+                transformed_names.extend(
+                    transformer.get_feature_names_out(cols).tolist()
+                )
             else:
                 transformed_names.extend(list(cols))
 
         self._feature_names = transformed_names
 
-        # Choose explainer based on classifier type
         classifier_type = type(classifier).__name__
 
         if classifier_type in (
@@ -67,13 +67,11 @@ class ExplainerService:
             self._explainer = shap.TreeExplainer(classifier)
             logger.info("shap_tree_explainer_built", classifier=classifier_type)
         elif classifier_type == "LogisticRegression":
-            # LinearExplainer needs a background dataset — use a zero matrix
             n_features = len(transformed_names)
             background = np.zeros((1, n_features))
             self._explainer = shap.LinearExplainer(classifier, background)
             logger.info("shap_linear_explainer_built", classifier=classifier_type)
         else:
-            # Generic KernelExplainer — slow but universal
             n_features = len(transformed_names)
             background = np.zeros((1, n_features))
             predict_fn = lambda x: classifier.predict_proba(x)[:, 1]  # noqa: E731
@@ -83,6 +81,72 @@ class ExplainerService:
     def _ensure_explainer(self) -> None:
         if self._explainer is None:
             self._build_explainer()
+
+    @staticmethod
+    def _select_positive_class_output(raw_shap: Any) -> np.ndarray:
+        """
+        Normalize SHAP return values to a NumPy array for class-1 (churn).
+
+        SHAP may return:
+        - list[class0, class1]
+        - ndarray
+        """
+        if isinstance(raw_shap, list):
+            if not raw_shap:
+                raise ValueError("Received empty SHAP output")
+            raw_shap = raw_shap[1] if len(raw_shap) > 1 else raw_shap[0]
+
+        return np.asarray(raw_shap)
+
+    @staticmethod
+    def _normalize_shap_matrix(raw_shap: Any) -> np.ndarray:
+        """
+        Convert SHAP output into a 2D matrix of shape (n_records, n_features).
+        """
+        arr = ExplainerService._select_positive_class_output(raw_shap)
+
+        if arr.ndim == 0:
+            return arr.reshape(1, 1)
+
+        if arr.ndim == 1:
+            return arr.reshape(1, -1)
+
+        if arr.ndim == 2:
+            return arr
+
+        if arr.ndim == 3:
+            if arr.shape[-1] == 1:
+                return arr.reshape(arr.shape[0], arr.shape[1])
+
+            if arr.shape[-1] >= 2:
+                return arr[:, :, 1]
+
+        return np.asarray(arr).reshape(arr.shape[0], -1)
+
+    @staticmethod
+    def _expected_value_scalar(expected_value: Any) -> float:
+        """
+        Convert SHAP expected_value into a scalar churn baseline.
+        """
+        arr = np.asarray(expected_value)
+
+        if arr.ndim == 0:
+            return float(arr.item())
+
+        flat = arr.reshape(-1)
+        if flat.size >= 2:
+            return float(flat[1])
+        if flat.size == 1:
+            return float(flat[0])
+
+        raise ValueError("Unable to determine scalar expected value")
+
+    @staticmethod
+    def _record_vector(record_shap: Any) -> np.ndarray:
+        """
+        Flatten a per-record SHAP vector into 1D float values.
+        """
+        return np.asarray(record_shap).reshape(-1).astype(float)
 
     def explain_records(
         self,
@@ -106,35 +170,28 @@ class ExplainerService:
         preprocessor = self._pipeline.named_steps["preprocessor"]
         classifier = self._pipeline.named_steps["classifier"]
 
-        # Transform features
-        X_transformed = preprocessor.transform(df)
+        x_transformed = preprocessor.transform(df)
 
-        # Get SHAP values
-        raw_shap = self._explainer.shap_values(X_transformed)
+        raw_shap = self._explainer.shap_values(x_transformed)
+        shap_matrix = self._normalize_shap_matrix(raw_shap)
 
-        # For binary classifiers, shap_values returns [class0_vals, class1_vals]
-        # We want class 1 (churn probability)
-        if isinstance(raw_shap, list) and len(raw_shap) == 2:
-            shap_values = raw_shap[1]
-        else:
-            shap_values = raw_shap
+        expected_value = self._expected_value_scalar(self._explainer.expected_value)
 
-        # Get base (expected) value
-        expected_value = float(
-            self._explainer.expected_value[1]
-            if hasattr(self._explainer.expected_value, "__len__")
-            else self._explainer.expected_value
-        )
-
-        # Predicted probabilities
-        probabilities = classifier.predict_proba(X_transformed)[:, 1]
+        probabilities = classifier.predict_proba(x_transformed)[:, 1]
 
         results: list[dict[str, Any]] = []
-        for i, (record_shap, prob) in enumerate(zip(shap_values, probabilities, strict=False)):
-            # Build sorted feature importance for this record
+        for i, (record_shap, prob) in enumerate(
+            zip(shap_matrix, probabilities, strict=False)
+        ):
+            record_vector = self._record_vector(record_shap)
+
             feature_shap_pairs = sorted(
-                zip(self._feature_names, record_shap.tolist(), strict=False),
-                key=lambda x: abs(x[1]),
+                zip(
+                    self._feature_names,
+                    record_vector.tolist(),
+                    strict=False,
+                ),
+                key=lambda x: abs(float(x[1])),
                 reverse=True,
             )
 
@@ -142,7 +199,9 @@ class ExplainerService:
                 {
                     "feature": fname,
                     "shap_value": round(float(sv), 6),
-                    "direction": "increases_churn" if sv > 0 else "decreases_churn",
+                    "direction": (
+                        "increases_churn" if float(sv) > 0 else "decreases_churn"
+                    ),
                     "magnitude": round(abs(float(sv)), 6),
                 }
                 for fname, sv in feature_shap_pairs[:top_n]
@@ -152,9 +211,9 @@ class ExplainerService:
                 {
                     "record_index": i,
                     "churn_probability": round(float(prob), 6),
-                    "expected_value": round(expected_value, 6),
+                    "expected_value": round(float(expected_value), 6),
                     "top_features": top_features,
-                    "shap_sum": round(float(sum(sv for _, sv in feature_shap_pairs)), 6),
+                    "shap_sum": round(float(np.sum(record_vector)), 6),
                 }
             )
 
@@ -175,20 +234,15 @@ class ExplainerService:
         df = pd.DataFrame(records, columns=FEATURE_COLUMNS)
         preprocessor = self._pipeline.named_steps["preprocessor"]
 
-        X_transformed = preprocessor.transform(df)
-        raw_shap = self._explainer.shap_values(X_transformed)
+        x_transformed = preprocessor.transform(df)
+        raw_shap = self._explainer.shap_values(x_transformed)
+        shap_matrix = self._normalize_shap_matrix(raw_shap)
 
-        if isinstance(raw_shap, list) and len(raw_shap) == 2:
-            shap_values = raw_shap[1]
-        else:
-            shap_values = raw_shap
-
-        # Mean absolute SHAP per feature
-        mean_abs_shap = np.abs(shap_values).mean(axis=0)
+        mean_abs_shap = np.abs(shap_matrix).mean(axis=0)
 
         ranked = sorted(
             zip(self._feature_names, mean_abs_shap.tolist(), strict=False),
-            key=lambda x: x[1],
+            key=lambda x: float(x[1]),
             reverse=True,
         )
 
@@ -211,7 +265,7 @@ _explainer_cache: dict[str, ExplainerService] = {}
 def get_explainer(pipeline: Any, version_tag: str) -> ExplainerService:
     """Return cached ExplainerService or build a new one."""
     if version_tag not in _explainer_cache:
-        _explainer_cache.clear()  # Only keep one version in memory
+        _explainer_cache.clear()
         _explainer_cache[version_tag] = ExplainerService(pipeline)
     return _explainer_cache[version_tag]
 

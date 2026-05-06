@@ -1,169 +1,149 @@
-# ChurnGuard AI — Full Stack
+# ChurnGuard AI — v4.0
 
-Customer Churn Prediction SaaS · FastAPI + React + PostgreSQL + Redis + Celery
-
-```
-http://localhost:3000  → React frontend (nginx)
-http://localhost:8000  → FastAPI backend
-http://localhost:5555  → Flower (Celery monitor)
-```
+Customer Churn Prediction · FastAPI · React · PostgreSQL · Redis · Celery · Docker
 
 ---
 
-## Quick Start (< 5 minutes)
+## Local setup (< 5 min)
 
-### 1. Clone and configure
 ```bash
-git clone https://github.com/YOUR_USERNAME/churnguard-ai
-cd churnguard-ai
+# 1. Copy env file
 cp .env.example .env
-```
 
-Open `.env` and set a real `SECRET_KEY`:
-```bash
+# 2. Generate and set SECRET_KEY
 python3 -c "import secrets; print(secrets.token_hex(32))"
-```
-Paste the output as `SECRET_KEY` in `.env`.
+# Open .env and paste the output as SECRET_KEY
 
-### 2. Start everything
-```bash
+# 3. Start everything
 docker compose up --build
 ```
 
-This starts: PostgreSQL → Redis → Migrations → FastAPI → Celery Worker + Beat → Flower → React Frontend
-
-Wait ~60 seconds for the first build. On subsequent starts it's ~10 seconds.
-
-### 3. Open the app
-```
-http://localhost:3000
-```
-
-Register an account, login, and explore the dashboard.
-
-### 4. Train and activate the ML model
-
-First, get the dataset:
-```bash
-mkdir -p backend/data
-curl -L "https://raw.githubusercontent.com/dsrscientist/dataset1/master/telecom_churn.csv" \
-  -o backend/data/train.csv
-```
-
-Train inside the container:
-```bash
-docker compose exec app python -m app.ml.train \
-  --data-path data/train.csv \
-  --output v1 \
-  --estimator rf \
-  --min-auc 0.75
-```
-
-Then in the UI: go to **Models** → register v1 → **Promote**. The dashboard will show `model_loaded: true`.
-
----
-
-## Project Structure
-
-```
-churnguard-ai/
-├── backend/              FastAPI app
-│   ├── app/
-│   │   ├── api/          Routers (HTTP only)
-│   │   ├── services/     Business logic
-│   │   ├── repositories/ DB access
-│   │   ├── models/       SQLAlchemy ORM
-│   │   ├── schemas/      Pydantic v2
-│   │   ├── ml/           Pipeline singleton + training
-│   │   └── tasks/        Celery tasks
-│   ├── alembic/          Migrations
-│   ├── tests/            Unit + integration + concurrency
-│   └── Dockerfile
-├── frontend/             React + Vite
-│   ├── src/
-│   │   ├── pages/        Dashboard, Predict, Batch, Models, Jobs, Login
-│   │   ├── components/   Layout, Sidebar
-│   │   └── api.js        All API calls
-│   ├── nginx.conf        Proxies /api → backend
-│   └── Dockerfile
-├── docker-compose.yml    Single command to run everything
-├── .env                  Your local config (not committed)
-├── .env.example          Safe template (committed)
-└── Makefile              Convenience commands
-```
-
----
-
-## Useful Commands
-
-```bash
-make up           # Start full stack (with build)
-make up-d         # Start detached
-make down         # Stop all containers
-make down-v       # Stop + delete volumes (fresh DB)
-make logs         # Follow app + frontend logs
-make train        # Train ML model
-make test         # Run unit tests
-make test-all     # Full test suite with coverage
-make shell-backend  # bash into FastAPI container
-```
-
----
-
-## Deploy to Cloud (Free Tier)
-
-### Backend → Render
-
-1. Push the whole repo to GitHub
-2. [render.com](https://render.com) → New Web Service → connect repo
-3. **Root Directory**: `backend`
-4. **Runtime**: Docker
-5. Add a free **PostgreSQL** and **Redis** from Render dashboard
-6. Set all env vars from `.env.example` (use Render's DB + Redis URLs)
-7. Add `ALLOWED_ORIGINS=["https://your-netlify-app.netlify.app"]`
-8. Copy your Render URL e.g. `https://churnguard-api.onrender.com`
-
-### Frontend → Netlify
-
-1. [netlify.com](https://netlify.com) → New site from Git → connect same repo
-2. **Base directory**: `frontend`
-3. **Build command**: `npm run build`
-4. **Publish directory**: `frontend/dist`
-5. Environment variables:
-   ```
-   VITE_API_URL=https://churnguard-api.onrender.com
-   ```
-6. Deploy → live URL instantly
-
-### Frontend → Firebase
-
-```bash
-cd frontend
-npm install
-npm run build
-npm install -g firebase-tools
-firebase login
-firebase init hosting    # public dir = dist, SPA = yes
-firebase deploy
-```
-
----
-
-## SLO Targets
-
-| Endpoint | p95 target |
+| Service | URL |
 |---|---|
-| GET /health | < 50ms |
-| POST /predict | < 200ms |
-| POST /upload | < 200ms (returns job_id immediately) |
-| GET /jobs/{id} | < 50ms |
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:8000/docs |
+| Flower (Celery) | http://localhost:5556 |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3001 (admin / churnguard) |
 
 ---
 
-## Tech Stack
+## Activate the ML model (first run only)
 
-**Backend**: FastAPI 0.115 · SQLAlchemy 2.0 Async · PostgreSQL 16 · Redis 7 · Celery 5 · scikit-learn 1.5 · Argon2 · JWT
+```bash
+# Register
+curl -s -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@test.com","password":"AdminPass1","role":"admin"}'
 
-**Frontend**: React 18 · Vite · React Router · Recharts · nginx
+# Login
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -d "username=admin@test.com&password=AdminPass1" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-**Infra**: Docker multi-stage builds · GitHub Actions CI · Alembic migrations
+# Register model
+MODEL_ID=$(curl -s -X POST http://localhost:8000/api/v1/models \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"version_tag":"v1","artifact_path":"app/ml/artifacts/v1.pkl",
+       "auc_roc":0.8003,"f1_score":0.2969,"precision":0.6129,"recall":0.1959}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+# Promote
+curl -s -X POST http://localhost:8000/api/v1/models/$MODEL_ID/promote \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Or use the one-command pipeline:
+```bash
+ADMIN_TOKEN=$TOKEN ./pipeline.sh
+```
+
+---
+
+## Run tests
+
+```bash
+docker compose exec app pytest tests/unit/ -v
+docker compose exec app pytest tests/integration/ -v
+docker compose exec app pytest tests/ --cov=app --cov-report=term-missing
+```
+
+---
+
+## Push to GitHub
+
+```bash
+git init
+git add .
+git commit -m "feat: ChurnGuard AI v4.0"
+git remote add origin https://github.com/YOUR_USERNAME/churnguard-ai
+git push -u origin main
+```
+
+GitHub Actions runs automatically: **lint → frontend build → tests → docker build**
+
+---
+
+## Deploy (free tier)
+
+### Backend → Railway
+
+1. [railway.app](https://railway.app) → New Project → Deploy from GitHub
+2. Select repo → **Root Directory**: `backend` → Runtime: **Docker**
+3. Add **PostgreSQL** service → copy `DATABASE_URL`
+4. Add **Redis** service → copy `REDIS_URL`
+5. Set these environment variables in Railway:
+
+```
+SECRET_KEY=<generate with python3>
+APP_ENV=production
+DEBUG=false
+DOCS_URL=null
+DATABASE_URL=postgresql+asyncpg://<railway-postgres-url>
+SYNC_DATABASE_URL=postgresql+psycopg2://<railway-postgres-url>
+REDIS_URL=<railway-redis-url>
+CELERY_BROKER_URL=<railway-redis-url>
+CELERY_RESULT_BACKEND=<railway-redis-url>
+ALLOWED_ORIGINS=["https://your-app.vercel.app"]
+MODEL_PATH=app/ml/artifacts/v1.pkl
+MIN_AUC_THRESHOLD=0.75
+PREDICTION_BATCH_SIZE=500
+CHUNK_SIZE=1000
+UPLOAD_DIR=/tmp/churnguard/uploads
+MAX_UPLOAD_SIZE_MB=50
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+ALGORITHM=HS256
+LOG_LEVEL=INFO
+```
+
+6. Railway gives you: `https://churnguard-api-xxx.up.railway.app`
+
+> **Railway DB URL conversion**: Railway gives `postgresql://user:pass@host:port/db`
+> Add `+asyncpg` for DATABASE_URL and `+psycopg2` for SYNC_DATABASE_URL
+
+### Frontend → Vercel
+
+1. [vercel.com](https://vercel.com) → Add New Project → Import GitHub repo
+2. **Root Directory**: `frontend` · **Framework**: Vite
+3. Add environment variable:
+   ```
+   VITE_API_URL=https://churnguard-api-xxx.up.railway.app
+   ```
+4. Deploy → live URL instantly
+
+Then go back to Railway and update `ALLOWED_ORIGINS` to include your Vercel URL.
+
+---
+
+## Common commands
+
+```bash
+make up           # Start full stack
+make down         # Stop (keeps DB data)
+make down-v       # Stop + wipe volumes (fresh DB)
+make logs         # Follow app + frontend logs
+make test         # Unit tests in container
+make test-all     # Full suite with coverage
+make shell        # bash into app container
+```

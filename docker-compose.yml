@@ -1,5 +1,4 @@
 services:
-  # ── PostgreSQL ────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     environment:
@@ -15,7 +14,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── Redis ─────────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -26,12 +24,11 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── Migrations ────────────────────────────────────────────────────────────────
   migrate:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    entrypoint: ""
+    entrypoint: []
     command: alembic upgrade head
     env_file: .env
     depends_on:
@@ -39,7 +36,6 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # ── FastAPI Backend ───────────────────────────────────────────────────────────
   app:
     build:
       context: ./backend
@@ -64,12 +60,14 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # ── Celery Worker ─────────────────────────────────────────────────────────────
   celery_worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: celery -A app.tasks.worker.celery_app worker --loglevel=info --concurrency=4
+    command: >
+      celery -A app.tasks.worker.celery_app worker
+      --loglevel=info
+      --pool=solo
     env_file: .env
     volumes:
       - model_artifacts:/app/app/ml/artifacts
@@ -79,55 +77,60 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      disable: true
     restart: unless-stopped
 
-  # ── Celery Beat ───────────────────────────────────────────────────────────────
   celery_beat:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    entrypoint: ""
+    entrypoint: []
     command: >
       celery -A app.tasks.worker.celery_app beat
       --loglevel=info
-      --schedule=/tmp/celerybeat-schedule
     env_file: .env
     depends_on:
       redis:
         condition: service_healthy
-    restart: on-failure
+    healthcheck:
+      disable: true
+    restart: unless-stopped
 
-  # ── Flower ───────────────────────────────────────────────────────────────────
+  # Port 5555 → 5556 on host to avoid conflicts with other local services
   flower:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    entrypoint: ""
-    command: celery -A app.tasks.worker.celery_app flower --port=5555
+    entrypoint: []
+    command: >
+      celery -A app.tasks.worker.celery_app flower
+      --port=5555
     ports:
-      - "5555:5555"
+      - "5556:5555"
     env_file: .env
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      disable: true
     restart: unless-stopped
 
-  # ── Prometheus ────────────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.55.1
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=15d'
-      - '--web.enable-lifecycle'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
     ports:
       - "9090:9090"
     depends_on:
       - app
     restart: unless-stopped
 
-  # ── Grafana ───────────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:11.3.2
     environment:
@@ -143,7 +146,6 @@ services:
       - prometheus
     restart: unless-stopped
 
-  # ── React Frontend ─────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend

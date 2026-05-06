@@ -11,6 +11,7 @@ env:
   NODE_VERSION: "20"
 
 jobs:
+  # ── Lint ──────────────────────────────────────────────────────────────────
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
@@ -36,6 +37,7 @@ jobs:
       - name: Check format
         run: ruff format --check app/
 
+  # ── Frontend build ────────────────────────────────────────────────────────
   frontend:
     name: Frontend Build
     runs-on: ubuntu-latest
@@ -61,6 +63,7 @@ jobs:
       - name: Verify dist
         run: test -d dist
 
+  # ── Backend tests ─────────────────────────────────────────────────────────
   test:
     name: Backend Tests
     runs-on: ubuntu-latest
@@ -96,7 +99,6 @@ jobs:
         working-directory: backend
 
     env:
-      PYTHONPATH: ${{ github.workspace }}/backend
       DATABASE_URL: postgresql+asyncpg://churnguard:churnguard@localhost:5432/churnguard_test
       SYNC_DATABASE_URL: postgresql+psycopg2://churnguard:churnguard@localhost:5432/churnguard_test
       REDIS_URL: redis://localhost:6379/0
@@ -127,9 +129,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install -e .
+        run: pip install -r requirements.txt
 
       - name: Create upload directory
         run: mkdir -p /tmp/churnguard/uploads
@@ -149,6 +149,7 @@ jobs:
           files: backend/coverage.xml
           fail_ci_if_error: false
 
+  # ── Docker build (verify images build, no push) ───────────────────────────
   docker:
     name: Docker Build
     runs-on: ubuntu-latest

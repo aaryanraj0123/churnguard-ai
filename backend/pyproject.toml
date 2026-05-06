@@ -1,18 +1,11 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "churnguard-ai"
 version = "4.0.0"
 requires-python = ">=3.12"
-
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["app*"]
 
 [tool.ruff]
 target-version = "py312"
@@ -21,29 +14,24 @@ line-length = 110
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "RUF"]
 ignore = [
-  "E402",
-  "E501",
-  "F841",
-  "N806",
-  "N818",
-  "RUF002",
-  "RUF003",
-  "RUF012",
-  "S110",
-  "S311",
-  "S108",
-  "S603",
-  "S607",
-  "B007",
-  "B904",
-  "UP038",
+  "E402",    # module-level import not at top — needed in some files
+  "E501",    # line too long — handled by formatter
+  "F841",    # local variable assigned but never used — sometimes intentional
+  "N806",    # variable in function should be lowercase — sklearn convention X, X_train
+  "N818",    # exception name suffix — existing codebase convention
+  "RUF002",  # docstring en-dash — cosmetic
+  "RUF003",  # comment en-dash — cosmetic
+  "RUF012",  # mutable class attribute ClassVar — FastAPI pattern
+  "S110",    # try-except-pass — intentional in tasks
+  "S311",    # pseudo-random — not cryptographic use
+  "S108",    # /tmp usage — intentional upload dir
+  "S603",    # subprocess — git commit hash is controlled input
+  "S607",    # partial executable — git is system binary
+  "B007",    # loop control variable unused — intentional
+  "B904",    # raise from — existing pattern
+  "UP038",   # isinstance X|Y — py3.12 compat
 ]
-per-file-ignores = {
-  "tests/*" = ["S", "N"],
-  "app/ml/train.py" = ["T20"],
-  "alembic/*" = ["N"],
-  "app/generate_dataset.py" = ["S311", "T20", "E501"]
-}
+per-file-ignores = { "tests/*" = ["S", "N"], "app/ml/train.py" = ["T20"], "alembic/*" = ["N"], "app/generate_dataset.py" = ["S311", "T20", "E501"] }
 
 [tool.mypy]
 python_version = "3.12"
@@ -57,3 +45,6 @@ addopts = "--cov=app --cov-report=term-missing --cov-fail-under=60 -v --ignore=t
 [tool.coverage.run]
 source = ["app"]
 omit = ["app/ml/train.py", "alembic/*", "app/generate_dataset.py"]
+
+[tool.pytest.ini_options.markers]
+smoke = "marks tests as smoke tests (require a live server)"
