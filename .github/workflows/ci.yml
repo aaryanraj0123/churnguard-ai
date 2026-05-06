@@ -99,6 +99,7 @@ jobs:
         working-directory: backend
 
     env:
+      PYTHONPATH: ${{ github.workspace }}/backend
       DATABASE_URL: postgresql+asyncpg://churnguard:churnguard@localhost:5432/churnguard_test
       SYNC_DATABASE_URL: postgresql+psycopg2://churnguard:churnguard@localhost:5432/churnguard_test
       REDIS_URL: redis://localhost:6379/0
