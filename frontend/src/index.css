@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #111827; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+/* Font smoothing */
+* { -webkit-font-smoothing: antialiased; }
+
+/* Textarea resize */
+textarea { resize: vertical; }
+
+/* Focus ring */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+}
